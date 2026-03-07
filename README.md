@@ -141,13 +141,32 @@ Checklist before switching to live mode:
 Warning: only do this when you fully understand every trade the system has made.
 
 ## Dashboard Guide
-- **System Status**: shows whether the system is running or halted.
-- **Signal Panel**: current signal state for BTC/USD and ETH/USD.
-- **Risk Utilization**: how close you are to risk limits.
-- **Recent Decisions**: latest logged system events.
-- **Trade History**: executed trades with PnL and fees.
-- **Price Chart**: candlestick chart with moving averages.
-- **Sidebar controls**: pause, kill switch, and refresh.
+Sidebar:
+- 🌊 Driftwood logo and mode badge (green = paper, red = live)
+- Last cycle time — shows how long ago the system last ran (e.g. "3 mins ago")
+- Refresh button, Pause trading toggle, Kill switch
+- Current UTC time
+
+Section 1 — System Status:
+Four metrics side by side: system status (Running/HALTED), trading mode, open trades count, last cycle time.
+
+Section 2 — Signal Panel:
+One card per pair (BTC/USD, ETH/USD) showing: large colored signal box (green=BUY, red=SELL, grey=HOLD), current price, trend direction per timeframe with color coding, momentum per timeframe with color coding, volume confirmation, and reason text.
+
+Section 3 — Risk Utilization:
+Daily loss % used with a progress bar (turns red above 50% of limit), open trades vs maximum allowed, portfolio value with change from starting capital.
+
+Section 4 — Equity Curve:
+Filled line chart showing portfolio value over time based on cumulative closed trade PnL. Appears once the first trade is closed.
+
+Section 5 — Price Chart:
+Candlestick chart with fast and slow moving average overlays. Pair selector (BTC/USD or ETH/USD) and timeframe selector (1h, 4h, 1d).
+
+Section 6 — Trade History:
+Summary metrics (total realized PnL, win rate, total trades) followed by full trade table with PnL colored green/red.
+
+Section 7 — Recent Decisions:
+Last 15 system events with human readable icons: ✅ Trade Opened, 🔒 Trade Closed, ⏭ Skipped, ❌ Error, ℹ️ Info.
 
 ## Disclaimer
 - This is a personal project for educational and paper-trading purposes.
