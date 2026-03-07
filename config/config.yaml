@@ -1,0 +1,64 @@
+# Driftwood trend-following crypto trading system configuration
+
+general:
+  app_name: driftwood # Application identifier
+  version: "0.1.0" # Config/application version
+  mode: paper # Trading mode: paper or live
+  log_level: INFO # Logging verbosity level
+
+exchange:
+  name: kraken # Exchange venue to connect to
+  fee_rate: 0.0026 # Taker fee rate used for cost calculations
+  sandbox_mode: false # Kraken has no sandbox; paper trading is controlled by general.mode
+
+trading:
+  pairs: # Market pairs eligible for trading
+    - BTC/USD
+    - ETH/USD
+  timeframes: # Strategy timeframes used for multi-timeframe confirmation
+    trend_filter: "1d" # Higher timeframe, defines the big picture direction
+    signal: "4h" # Mid timeframe, confirms entry conditions
+    entry: "1h" # Lower timeframe, times the actual entry
+    primary: "4h" # Timeframe used for position sizing and risk calculations
+  max_open_trades: 2 # Maximum number of simultaneous open trades
+  one_trade_per_pair_only: true # Prevent multiple open trades on the same pair
+
+risk:
+  max_position_size_pct: 0.20 # Max position size as fraction of total portfolio (20%)
+  max_daily_loss_pct: 0.03 # Stop trading after daily portfolio loss reaches 3%
+  max_drawdown_pct: 0.10 # Maximum allowed portfolio drawdown before risk-off
+  min_trade_size_usd: 10 # Minimum notional size per trade in USD
+
+portfolio:
+  initial_capital_usd: 1000 # Starting portfolio capital in USD
+
+signals:
+  # All three timeframes must agree before a trade is taken
+  daily:
+    fast_ma_period: 20 # Fast moving-average lookback period
+    slow_ma_period: 50 # Slow moving-average lookback period
+    momentum_period: 14 # Momentum indicator lookback period
+    volume_ma_period: 20 # Volume moving-average lookback period
+  four_hour:
+    fast_ma_period: 20 # Fast moving-average lookback period
+    slow_ma_period: 50 # Slow moving-average lookback period
+    momentum_period: 14 # Momentum indicator lookback period
+    volume_ma_period: 20 # Volume moving-average lookback period
+  one_hour:
+    fast_ma_period: 12 # Fast moving-average lookback period
+    slow_ma_period: 26 # Slow moving-average lookback period
+    momentum_period: 10 # Momentum indicator lookback period
+    volume_ma_period: 20 # Volume moving-average lookback period
+
+execution:
+  order_type: market # Order execution type
+  slippage_estimate: 0.001 # Estimated execution slippage rate
+
+database:
+  path: data/driftwood.db # SQLite database file path
+  type: sqlite # Database engine type
+
+logging:
+  path: logs/driftwood.log # Log output file path
+  max_file_size: 10MB # Maximum size per log file before rotation
+  backup_count: 5 # Number of rotated log files to retain
