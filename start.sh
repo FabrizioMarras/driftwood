@@ -28,4 +28,4 @@ python3 scheduler.py > logs/scheduler.log 2>&1 &
 SCHEDULER_PID=$!
 
 echo "Starting Driftwood dashboard..."
-streamlit run dashboard/app.py
+streamlit run dashboard/main.py

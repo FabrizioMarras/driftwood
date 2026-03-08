@@ -12,7 +12,7 @@ import streamlit as st
 from sqlalchemy import text
 
 # Ensure project-root imports work when launching from dashboard/.
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -21,9 +21,6 @@ from data.database import get_engine, load_ohlcv
 from data.kraken_client import fetch_ohlcv
 from signals.indicators import compute_all_indicators, compute_trend_signal
 
-
-# Page configuration.
-st.set_page_config(page_title="Driftwood Trading System", page_icon="🌊", layout="wide")
 
 
 @st.cache_data(ttl=60)
