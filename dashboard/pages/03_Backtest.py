@@ -41,6 +41,7 @@ if results_payload is None:
 
 try:
     cfg = results_payload.get("config", {})
+    pair_results = results_payload.get("results", [])
     generated_at = str(results_payload.get("generated_at", "Unknown"))
     generated_display = generated_at
     try:
@@ -54,8 +55,9 @@ try:
 
     st.caption(
         f"Generated: {generated_display} | "
-        f"Period: {cfg.get('start_date', 'N/A')} to {cfg.get('end_date', 'N/A')} | "
-        f"Initial capital: ${float(cfg.get('initial_capital', 0.0)):,.2f}"
+        f"Period: {cfg.get('start_date')} to {cfg.get('end_date')} | "
+        f"Initial capital: ${float(cfg.get('initial_capital', 0.0)):,.2f} | "
+        f"Pairs: {len(pair_results)}"
     )
 except Exception as exc:
     st.warning(f"Failed to render header metadata: {exc}")
@@ -88,6 +90,19 @@ try:
         delta_color="normal",
     )
     c3.metric("Best Performing Pair", best_pair)
+
+    st.divider()
+
+    pair_cfg_map = results_payload.get("pair_configs", {})
+    if pair_cfg_map:
+        cfg_cols = st.columns(len(pair_cfg_map))
+        for col, (pair_name, pair_cfg) in zip(cfg_cols, pair_cfg_map.items()):
+            col.markdown(
+                f"**{pair_name}** - "
+                f"SL: {float(pair_cfg.get('stop_loss_pct', 0.0)) * 100:.0f}% | "
+                f"TP: {float(pair_cfg.get('take_profit_pct', 0.0)) * 100:.0f}% | "
+                f"Pos: {float(pair_cfg.get('position_size_pct', 0.0)) * 100:.0f}%"
+            )
 except Exception as exc:
     st.warning(f"Failed to render combined summary: {exc}")
 
@@ -110,12 +125,30 @@ try:
                 total_pnl_usd = float(item.get("total_pnl_usd", 0.0))
                 final_value = float(item.get("final_portfolio_value", 0.0))
                 initial_value = float(cfg.get("initial_capital", 0.0))
+                pair_cfg = item.get("pair_config", {})
+
+                st.markdown(
+                    f"**Strategy:** SL {float(pair_cfg.get('stop_loss_pct', 0)) * 100:.1f}% | "
+                    f"TP {float(pair_cfg.get('take_profit_pct', 0)) * 100:.1f}% | "
+                    f"Position {float(pair_cfg.get('position_size_pct', 0)) * 100:.1f}%"
+                )
 
                 # Row 1 metrics.
                 r1c1, r1c2, r1c3, r1c4 = st.columns(4)
                 r1c1.metric("Total Trades", f"{int(item.get('total_trades', 0))}")
                 r1c2.metric("Win Rate %", f"{float(item.get('win_rate_pct', 0.0)):.2f}%")
-                r1c3.metric("Profit Factor", f"{float(item.get('profit_factor', 0.0)):.2f}")
+                profit_factor = float(item.get("profit_factor", 0.0))
+                pf_color = "#dc2626"
+                if profit_factor >= 1.2:
+                    pf_color = "#16a34a"
+                elif profit_factor >= 1.0:
+                    pf_color = "#f59e0b"
+                r1c3.markdown(
+                    "Profit Factor  \n"
+                    f"<span style='color:{pf_color};font-weight:700;font-size:1.1rem;'>"
+                    f"{profit_factor:.2f}</span>",
+                    unsafe_allow_html=True,
+                )
                 r1c4.metric(
                     "Max Drawdown %", f"{float(item.get('max_drawdown_pct', 0.0)):.2f}%"
                 )
@@ -235,13 +268,31 @@ try:
     st.subheader("Backtest Config Used")
     with st.expander("Backtest Configuration"):
         cfg = results_payload.get("config", {})
+        st.markdown("**Shared config**")
         st.write(f"start_date: {cfg.get('start_date', 'N/A')}")
         st.write(f"end_date: {cfg.get('end_date', 'N/A')}")
         st.write(f"initial_capital: {cfg.get('initial_capital', 'N/A')}")
-        st.write(f"stop_loss_pct: {cfg.get('stop_loss_pct', 'N/A')}")
-        st.write(f"take_profit_pct: {cfg.get('take_profit_pct', 'N/A')}")
         st.write(f"fee_rate: {cfg.get('fee_rate', 'N/A')}")
         st.write(f"slippage: {cfg.get('slippage', 'N/A')}")
-        st.write(f"position_size_pct: {cfg.get('position_size_pct', 'N/A')}")
+        st.write(f"max_open_trades: {cfg.get('max_open_trades', 'N/A')}")
+
+        st.markdown("**Per-pair config**")
+        pair_cfg_map = results_payload.get("pair_configs", {})
+        if pair_cfg_map:
+            pair_cfg_df = pd.DataFrame.from_dict(pair_cfg_map, orient="index")[
+                ["stop_loss_pct", "take_profit_pct", "position_size_pct"]
+            ]
+            st.dataframe(
+                pair_cfg_df.style.format(
+                    {
+                        "stop_loss_pct": "{:.2%}",
+                        "take_profit_pct": "{:.2%}",
+                        "position_size_pct": "{:.2%}",
+                    }
+                ),
+                use_container_width=True,
+            )
+        else:
+            st.info("No per-pair config found in results JSON.")
 except Exception as exc:
     st.warning(f"Failed to render backtest config: {exc}")

@@ -1,6 +1,9 @@
 # Secrets
 .env
 
+#Historical Data
+data/historical/
+
 # Database
 data/*.db
 data/*.db-journal

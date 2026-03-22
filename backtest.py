@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -17,6 +18,8 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+CACHE_DIR = PROJECT_ROOT / "data" / "historical"
+# Add `data/historical/` to .gitignore to avoid committing cached parquet files.
 
 from config.config_loader import get_config
 from signals.indicators import compute_all_indicators, compute_trend_signal
@@ -26,13 +29,28 @@ BACKTEST_CONFIG = {
     "start_date": "2020-01-01",
     "end_date": "2025-12-31",
     "initial_capital": 1000.0,
-    "stop_loss_pct": 0.03,
-    "take_profit_pct": 0.06,
     "fee_rate": 0.0026,
     "slippage": 0.001,
-    "position_size_pct": 0.20,
     "max_open_trades": 2,
     "min_trade_size_usd": 10.0,
+}
+
+PAIR_CONFIGS = {
+    "BTC/USD": {
+        "stop_loss_pct": 0.02,
+        "take_profit_pct": 0.09,  # Test 3 was best for BTC
+        "position_size_pct": 0.30,
+    },
+    "ETH/USD": {
+        "stop_loss_pct": 0.02,
+        "take_profit_pct": 0.12,  # Test 5 was best for ETH
+        "position_size_pct": 0.30,
+    },
+    "SOL/USD": {
+        "stop_loss_pct": 0.03,  # wider SL for SOL volatility
+        "take_profit_pct": 0.12,
+        "position_size_pct": 0.25,  # smaller position — less proven
+    },
 }
 
 
@@ -44,10 +62,26 @@ def _to_utc_ms(date_str: str, end_of_day: bool = False) -> int:
     return int(dt.timestamp() * 1000)
 
 
+def _cache_path(symbol: str, timeframe: str) -> Path:
+    """Build a stable parquet cache path for one symbol/timeframe."""
+    symbol_clean = symbol.replace("/", "_")
+    return CACHE_DIR / f"{symbol_clean}_{timeframe}.parquet"
+
+
 def fetch_historical_ohlcv(
     symbol: str, timeframe: str, start_date: str, end_date: str
 ) -> pd.DataFrame:
-    """Fetch Kraken OHLCV in 500-candle pages within the provided UTC date range."""
+    """Load cached OHLCV when available, otherwise fetch and cache from Binance."""
+    cache_path = _cache_path(symbol, timeframe)
+    cache_label = cache_path.stem
+    if cache_path.exists():
+        try:
+            print(f"Loading {cache_label} from cache...")
+            return pd.read_parquet(cache_path)
+        except Exception as exc:
+            print(f"Warning: failed to load cache {cache_path}: {exc}")
+
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     exchange = ccxt.binance()
     start_ms = _to_utc_ms(start_date)
     end_ms = _to_utc_ms(end_date, end_of_day=True)
@@ -94,6 +128,8 @@ def fetch_historical_ohlcv(
             .set_index("timestamp")
             .sort_index()[["open", "high", "low", "close", "volume"]]
         )
+        df.to_parquet(cache_path)
+        print(f"Saved {cache_label} to cache")
         return df
 
     except Exception as exc:
@@ -145,7 +181,9 @@ def generate_signals(
     return signals
 
 
-def simulate_trades(signals: List[Dict[str, Any]], symbol: str) -> List[Dict[str, Any]]:
+def simulate_trades(
+    signals: List[Dict[str, Any]], symbol: str, pair_config: Dict[str, float]
+) -> List[Dict[str, Any]]:
     """Simulate entries/exits with slippage, fees, and portfolio-level risk controls."""
     portfolio_value = float(BACKTEST_CONFIG["initial_capital"])
     peak_value = portfolio_value
@@ -183,7 +221,7 @@ def simulate_trades(signals: List[Dict[str, Any]], symbol: str) -> List[Dict[str
 
         if can_open_trade:
             entry_price = close_price * (1.0 + float(BACKTEST_CONFIG["slippage"]))
-            position_value = portfolio_value * float(BACKTEST_CONFIG["position_size_pct"])
+            position_value = portfolio_value * float(pair_config["position_size_pct"])
 
             if position_value >= float(BACKTEST_CONFIG["min_trade_size_usd"]):
                 quantity = position_value / entry_price
@@ -201,9 +239,9 @@ def simulate_trades(signals: List[Dict[str, Any]], symbol: str) -> List[Dict[str
         # Evaluate exits for each open trade on every decision candle.
         remaining_open_trades: List[Dict[str, Any]] = []
         for trade in open_trades:
-            stop_loss_price = trade["entry_price"] * (1.0 - float(BACKTEST_CONFIG["stop_loss_pct"]))
+            stop_loss_price = trade["entry_price"] * (1.0 - float(pair_config["stop_loss_pct"]))
             take_profit_price = trade["entry_price"] * (
-                1.0 + float(BACKTEST_CONFIG["take_profit_pct"])
+                1.0 + float(pair_config["take_profit_pct"])
             )
 
             should_exit = False
@@ -276,7 +314,11 @@ def simulate_trades(signals: List[Dict[str, Any]], symbol: str) -> List[Dict[str
 
 
 def calculate_results(
-    trades: List[Dict[str, Any]], symbol: str, start_date: str, end_date: str
+    trades: List[Dict[str, Any]],
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    pair_config: Dict[str, float],
 ) -> Dict[str, Any]:
     """Aggregate core performance metrics for one symbol backtest run."""
     total_trades = len(trades)
@@ -332,6 +374,7 @@ def calculate_results(
         "max_drawdown_pct": max_drawdown_pct,
         "final_portfolio_value": final_portfolio_value,
         "years": years,
+        "pair_config": pair_config,
         "trades": trades,
     }
 
@@ -340,6 +383,12 @@ def print_results(results: Dict[str, Any]) -> None:
     """Print a clean, aligned performance summary for one symbol."""
     print("═" * 42)
     print(f" Backtest Results - {results['symbol']}")
+    pair_cfg = results.get("pair_config", {})
+    print(
+        f" SL: {float(pair_cfg.get('stop_loss_pct', 0.0)) * 100:.1f}% | "
+        f"TP: {float(pair_cfg.get('take_profit_pct', 0.0)) * 100:.1f}% | "
+        f"Position: {float(pair_cfg.get('position_size_pct', 0.0)) * 100:.1f}%"
+    )
     print(
         f" {BACKTEST_CONFIG['start_date']} to {BACKTEST_CONFIG['end_date']} "
         f"({results['years']:.0f} years)"
@@ -363,22 +412,46 @@ def print_results(results: Dict[str, Any]) -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--refresh", action="store_true", help="Force re-fetch all data from Binance"
+    )
+    args = parser.parse_args()
+
+    if args.refresh:
+        if CACHE_DIR.exists():
+            for parquet_file in CACHE_DIR.glob("*.parquet"):
+                parquet_file.unlink()
+        print(f"Cleared cached parquet files in {CACHE_DIR}")
+
     print("🌊 Driftwood Backtest Engine")
     print(
         "Config: "
         f"{BACKTEST_CONFIG['start_date']} -> {BACKTEST_CONFIG['end_date']}, "
         f"Initial ${BACKTEST_CONFIG['initial_capital']:.2f}, "
-        f"SL {BACKTEST_CONFIG['stop_loss_pct'] * 100:.1f}%, "
-        f"TP {BACKTEST_CONFIG['take_profit_pct'] * 100:.1f}%"
+        f"Fee {BACKTEST_CONFIG['fee_rate'] * 100:.2f}%, "
+        f"Slippage {BACKTEST_CONFIG['slippage'] * 100:.2f}%"
     )
 
     # Load project config so the backtest uses the same indicator parameters as live execution.
     _ = get_config()
 
-    symbols = [("BTC/USDT", "BTC/USD"), ("ETH/USDT", "ETH/USD")]
+    symbols = [
+        ("BTC/USDT", "BTC/USD"),
+        ("ETH/USDT", "ETH/USD"),
+        ("SOL/USDT", "SOL/USD"),
+    ]
     all_results: List[Dict[str, Any]] = []
 
     for fetch_symbol, display_symbol in symbols:
+        pair_config = PAIR_CONFIGS.get(
+            display_symbol,
+            {
+                "stop_loss_pct": 0.02,
+                "take_profit_pct": 0.09,
+                "position_size_pct": 0.30,
+            },
+        )
         print(f"\nRunning backtest for {display_symbol}...")
         try:
             daily_df = fetch_historical_ohlcv(
@@ -396,12 +469,13 @@ if __name__ == "__main__":
                 continue
 
             signals = generate_signals(daily_df, four_hour_df, one_hour_df)
-            trades = simulate_trades(signals, display_symbol)
+            trades = simulate_trades(signals, display_symbol, pair_config)
             results = calculate_results(
                 trades,
                 display_symbol,
                 BACKTEST_CONFIG["start_date"],
                 BACKTEST_CONFIG["end_date"],
+                pair_config,
             )
             print_results(results)
             all_results.append(results)
@@ -435,6 +509,7 @@ if __name__ == "__main__":
                 {
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "config": BACKTEST_CONFIG,
+                    "pair_configs": PAIR_CONFIGS,
                     "results": all_results,
                 },
                 f,
