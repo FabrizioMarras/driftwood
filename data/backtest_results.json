@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-03-22T17:30:53.112004+00:00",
+  "config": {
+    "start_date": "2020-01-01",
+    "end_date": "2025-12-31",
+    "initial_capital": 1000.0,
+    "stop_loss_pct": 0.03,
+    "take_profit_pct": 0.06,
+    "fee_rate": 0.0026,
+    "slippage": 0.001,
+    "position_size_pct": 0.2,
+    "max_open_trades": 2,
+    "min_trade_size_usd": 10.0
+  },
+  "results": [
+    {
+      "symbol": "BTC/USD",
+      "total_trades": 104,
+      "wins": 45,
+      "losses": 59,
+      "win_rate_pct": 43.269230769230774,
+      "total_pnl_usd": 35.167105972427166,
+      "total_pnl_pct": 3.5167105972427164,
+      "profit_factor": 1.0587365306987486,
+      "avg_win_usd": 14.086520235752776,
+      "avg_loss_usd": -10.147903468414372,
+      "max_single_gain_usd": 22.19190322133343,
+      "max_single_loss_usd": -17.060566761490627,
+      "trades_per_year": 17.337288909173896,
+      "max_drawdown_pct": 10.206786506804217,
+      "final_portfolio_value": 1035.1671059724272,
+      "years": 5.9986310746064335
+    },
+    {
+      "symbol": "ETH/USD",
+      "total_trades": 151,
+      "wins": 70,
+      "losses": 81,
+      "win_rate_pct": 46.35761589403973,
+      "total_pnl_usd": 94.29925688294793,
+      "total_pnl_pct": 9.429925688294794,
+      "profit_factor": 1.1046840154454998,
+      "avg_win_usd": 14.215689445950494,
+      "avg_loss_usd": -11.120975362143042,
+      "max_single_gain_usd": 22.129038285676668,
+      "max_single_loss_usd": -24.844884228228416,
+      "trades_per_year": 25.172409858512097,
+      "max_drawdown_pct": 10.488350078996662,
+      "final_portfolio_value": 1094.299256882948,
+      "years": 5.9986310746064335
+    }
+  ]
+}
