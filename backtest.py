@@ -332,6 +332,7 @@ def calculate_results(
         "max_drawdown_pct": max_drawdown_pct,
         "final_portfolio_value": final_portfolio_value,
         "years": years,
+        "trades": trades,
     }
 
 
