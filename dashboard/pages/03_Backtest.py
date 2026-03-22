@@ -223,6 +223,84 @@ try:
                 e2.metric("🎯 Take Profit", f"{take_profits}")
                 e3.metric("🔄 Trend Reversal", f"{reversals}")
 
+                # Yearly breakdown section.
+                st.subheader("Yearly Breakdown")
+                yearly = item.get("yearly_breakdown", [])
+
+                if not yearly:
+                    st.info("No yearly breakdown available.")
+                else:
+                    yearly_df = pd.DataFrame(yearly)
+                    yearly_display = yearly_df.reindex(
+                        columns=[
+                            "year",
+                            "trades",
+                            "win_rate_pct",
+                            "total_pnl_usd",
+                            "total_pnl_pct",
+                            "profit_factor",
+                            "max_drawdown_pct",
+                        ]
+                    )
+
+                    float_cols = [
+                        "win_rate_pct",
+                        "total_pnl_usd",
+                        "total_pnl_pct",
+                        "profit_factor",
+                        "max_drawdown_pct",
+                    ]
+                    for col in float_cols:
+                        if col in yearly_display.columns:
+                            yearly_display[col] = pd.to_numeric(
+                                yearly_display[col], errors="coerce"
+                            ).round(2)
+
+                    def _pnl_year_color(v: object) -> str:
+                        val = pd.to_numeric(v, errors="coerce")
+                        if pd.isna(val):
+                            return ""
+                        return "color: #16a34a" if float(val) > 0 else "color: #dc2626"
+
+                    def _pf_year_color(v: object) -> str:
+                        val = pd.to_numeric(v, errors="coerce")
+                        if pd.isna(val):
+                            return ""
+                        if float(val) >= 1.2:
+                            return "color: #16a34a"
+                        if float(val) >= 1.0:
+                            return "color: #f59e0b"
+                        return "color: #dc2626"
+
+                    st.dataframe(
+                        yearly_display.style.map(_pnl_year_color, subset=["total_pnl_usd"]).map(
+                            _pf_year_color, subset=["profit_factor"]
+                        ),
+                        use_container_width=True,
+                    )
+
+                    pnl_colors = [
+                        "#16a34a" if float(v) > 0 else "#dc2626"
+                        for v in yearly_display["total_pnl_usd"].fillna(0.0).tolist()
+                    ]
+                    pnl_fig = go.Figure(
+                        data=[
+                            go.Bar(
+                                x=yearly_display["year"],
+                                y=yearly_display["total_pnl_usd"],
+                                marker_color=pnl_colors,
+                            )
+                        ]
+                    )
+                    pnl_fig.update_layout(
+                        title=f"{symbol} - PnL by Year",
+                        xaxis_title="Year",
+                        yaxis_title="Total PnL (USD)",
+                        height=300,
+                        margin={"l": 20, "r": 20, "t": 50, "b": 20},
+                    )
+                    st.plotly_chart(pnl_fig, use_container_width=True)
+
                 # Trade detail table for the selected pair.
                 if trades:
                     trade_df = pd.DataFrame(trades)

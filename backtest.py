@@ -31,28 +31,28 @@ BACKTEST_CONFIG = {
     "initial_capital": 1000.0,
     "fee_rate": 0.0026,
     "slippage": 0.001,
-    "max_open_trades": 2,
+    "max_drawdown_pct": 0.10,
+    "max_open_trades": 3,
     "min_trade_size_usd": 10.0,
 }
 
 PAIR_CONFIGS = {
     "BTC/USD": {
         "stop_loss_pct": 0.02,
-        "take_profit_pct": 0.09,  # Test 3 was best for BTC
-        "position_size_pct": 0.30,
+        "take_profit_pct": 0.10,
+        "position_size_pct": 0.35,  # keep
     },
     "ETH/USD": {
         "stop_loss_pct": 0.02,
-        "take_profit_pct": 0.12,  # Test 5 was best for ETH
-        "position_size_pct": 0.30,
+        "take_profit_pct": 0.12,
+        "position_size_pct": 0.30,  # roll back
     },
     "SOL/USD": {
-        "stop_loss_pct": 0.03,  # wider SL for SOL volatility
+        "stop_loss_pct": 0.02,
         "take_profit_pct": 0.12,
-        "position_size_pct": 0.25,  # smaller position — less proven
+        "position_size_pct": 0.20,  # try matching ETH params
     },
 }
-
 
 def _to_utc_ms(date_str: str, end_of_day: bool = False) -> int:
     """Convert YYYY-MM-DD to UTC milliseconds, optionally at end of day."""
@@ -209,6 +209,13 @@ def simulate_trades(
             daily_loss = 0.0
             daily_halted = False
 
+        # Recovery mechanism — resume trading when market shows bullish signal again.
+        # Reset peak_value to current portfolio_value so drawdown calculation
+        # starts fresh from the new baseline, preventing immediate re-halt.
+        if trading_halted and signal == "buy":
+            trading_halted = False
+            peak_value = portfolio_value
+
         # Entry logic mirrors the live system's buy gate + position sizing constraints.
         has_trade_for_symbol = any(t["symbol"] == symbol for t in open_trades)
         can_open_trade = (
@@ -297,8 +304,8 @@ def simulate_trades(
                     }
                 )
 
-                # Hard stop all trading if max drawdown breach occurs.
-                if drawdown >= 0.10:
+                # Soft halt when max drawdown breached — but keep monitoring signals.
+                if drawdown >= float(BACKTEST_CONFIG["max_drawdown_pct"]):
                     trading_halted = True
                     remaining_open_trades = []
                     break
@@ -306,9 +313,6 @@ def simulate_trades(
                 remaining_open_trades.append(trade)
 
         open_trades = remaining_open_trades
-
-        if trading_halted:
-            break
 
     return closed_trades
 
@@ -374,9 +378,84 @@ def calculate_results(
         "max_drawdown_pct": max_drawdown_pct,
         "final_portfolio_value": final_portfolio_value,
         "years": years,
+        "yearly_breakdown": calculate_yearly_breakdown(trades, initial_capital),
         "pair_config": pair_config,
         "trades": trades,
     }
+
+
+def calculate_yearly_breakdown(
+    trades: List[Dict[str, Any]], initial_capital: float
+) -> List[Dict[str, Any]]:
+    """Aggregate yearly performance metrics from closed trades."""
+    yearly_groups: Dict[int, List[Dict[str, Any]]] = {}
+
+    for trade in trades:
+        exit_time = trade.get("exit_time")
+        exit_ts = pd.to_datetime(exit_time, utc=True, errors="coerce")
+        if pd.isna(exit_ts):
+            continue
+        year = int(exit_ts.year)
+        yearly_groups.setdefault(year, []).append(trade)
+
+    yearly_results: List[Dict[str, Any]] = []
+    for year in sorted(yearly_groups.keys()):
+        year_trades = yearly_groups[year]
+        if not year_trades:
+            continue
+
+        wins = [t for t in year_trades if float(t.get("pnl", 0.0)) > 0]
+        losses = [t for t in year_trades if float(t.get("pnl", 0.0)) < 0]
+        total_pnl = float(sum(float(t.get("pnl", 0.0)) for t in year_trades))
+
+        win_sum = float(sum(float(t.get("pnl", 0.0)) for t in wins))
+        loss_sum = float(sum(float(t.get("pnl", 0.0)) for t in losses))
+        profit_factor = (win_sum / abs(loss_sum)) if loss_sum < 0 else 0.0
+
+        avg_win = float(np.mean([float(t.get("pnl", 0.0)) for t in wins])) if wins else 0.0
+        avg_loss = (
+            float(np.mean([float(t.get("pnl", 0.0)) for t in losses])) if losses else 0.0
+        )
+
+        # Compute intra-year drawdown from trade-by-trade portfolio snapshots.
+        sorted_year_trades = sorted(
+            year_trades,
+            key=lambda t: pd.to_datetime(t.get("exit_time"), utc=True, errors="coerce"),
+        )
+        equity_points = [
+            float(t.get("portfolio_value_after_trade", initial_capital))
+            for t in sorted_year_trades
+        ]
+
+        max_drawdown_pct = 0.0
+        if equity_points:
+            running_peak = equity_points[0]
+            for equity in equity_points:
+                running_peak = max(running_peak, equity)
+                if running_peak > 0:
+                    dd_pct = ((running_peak - equity) / running_peak) * 100.0
+                    max_drawdown_pct = max(max_drawdown_pct, dd_pct)
+
+        trades_count = len(year_trades)
+        yearly_results.append(
+            {
+                "year": year,
+                "trades": trades_count,
+                "wins": len(wins),
+                "losses": len(losses),
+                "win_rate_pct": (len(wins) / trades_count * 100.0) if trades_count else 0.0,
+                "total_pnl_usd": total_pnl,
+                "total_pnl_pct": (total_pnl / initial_capital * 100.0)
+                if initial_capital
+                else 0.0,
+                "profit_factor": profit_factor,
+                "avg_win_usd": avg_win,
+                "avg_loss_usd": avg_loss,
+                "max_drawdown_pct": max_drawdown_pct,
+            }
+        )
+
+    return yearly_results
 
 
 def print_results(results: Dict[str, Any]) -> None:
